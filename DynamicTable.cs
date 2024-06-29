@@ -4,9 +4,10 @@
     {
         #region variables
 
-        readonly List<HeaderField> _table;
-        readonly int _maxCapacity;
         int _currentSize = 0;
+
+        readonly int _maxCapacity;
+        readonly List<HeaderField> _table;
 
         #endregion
 
