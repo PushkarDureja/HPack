@@ -6,8 +6,10 @@ namespace HPack
     {
         #region variables
 
-        private static readonly List<HeaderField> _staticTable =
-        [
+        private readonly DynamicTable _dynamicTable;
+
+        private static readonly HashSet<string> _secureHeaders = [];
+        private static readonly HeaderField[] _staticTable = [
             new HeaderField(":authority", string.Empty),
             new HeaderField(":method", "GET"),
             new HeaderField(":method", "POST"),
@@ -70,8 +72,6 @@ namespace HPack
             new HeaderField("via", string.Empty),
             new HeaderField("www-authenticate", string.Empty)
         ];
-        private static readonly HashSet<string> _secureHeaders = [];
-        private readonly DynamicTable _dynamicTable;
 
         #endregion
 
@@ -96,7 +96,7 @@ namespace HPack
                 bool indexedHeaderFieldFound = false;
 
                 //search in static table
-                for (int i = 0; i < _staticTable.Count; i++)
+                for (int i = 0; i < _staticTable.Length; i++)
                 {
                     HeaderField staticHeaderField = _staticTable[i];
                     if (staticHeaderField.Name == headerField.Name)
@@ -120,12 +120,12 @@ namespace HPack
                         HeaderField dynamicHeaderField = _dynamicTable.GetElement(i);
                         if (dynamicHeaderField.Name == headerField.Name)
                         {
-                            index = Math.Min(_staticTable.Count + i + 1, index);
+                            index = Math.Min(_staticTable.Length + i + 1, index);
                         }
 
                         if (dynamicHeaderField.Name == headerField.Name && dynamicHeaderField.Value == headerField.Value)
                         {
-                            index = _staticTable.Count + i + 1;
+                            index = _staticTable.Length + i + 1;
                             indexedHeaderFieldFound = true;
                             break;
                         }
@@ -194,7 +194,7 @@ namespace HPack
                         bool useHuffmanEncodedHeaderName = huffmanEncodedHeaderName.Length < asciiEncodedHeaderName.Length;
 
                         //use ASCII Encoding
-                        if (!true)
+                        if (!useHuffmanEncodedHeaderName)
                         {
                             int headerNameLength = asciiEncodedHeaderName.Length;
                             byte headerNameLengthByte = 0;
@@ -221,7 +221,7 @@ namespace HPack
                     bool useHuffmanEncodedHeaderValue = huffmanEncodedHeaderValue.Length < headerField.Value.Length;
 
                     //use ASCII Encoding
-                    if (!true)
+                    if (!useHuffmanEncodedHeaderValue)
                     {
                         int headerValueLength = asciiEncodedHeaderValue.Length;
                         byte headerValueLengthByte = 0;
@@ -241,6 +241,7 @@ namespace HPack
                     }
 
                     break;
+
                 default:
                     throw new NotImplementedException($"Header Encoding Not Implemented for type {type}");
             }

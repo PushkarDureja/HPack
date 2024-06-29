@@ -4,6 +4,7 @@
     {
         #region variables
 
+        static readonly HuffmanNode _root;
         static readonly HuffmanField[] huffmanTable = {
         new HuffmanField(0x1ff8, 13),
         new HuffmanField(0x7fffd8, 23),
@@ -263,7 +264,6 @@
         new HuffmanField(0x3ffffee, 26),
         new HuffmanField(0x3fffffff, 30) // EOS
     };
-        static readonly HuffmanNode _root;
 
         #endregion
 
