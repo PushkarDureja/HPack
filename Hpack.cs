@@ -86,7 +86,7 @@ namespace HPack
 
         #region public
 
-        public byte[] Pack(List<HeaderField> headerList)
+        public List<byte> Pack(List<HeaderField> headerList)
         {
             List<byte> packedHeaders = [];
 
@@ -158,17 +158,67 @@ namespace HPack
                 _dynamicTable.Add(headerField);
             }
 
-            return [.. packedHeaders];
+            return packedHeaders;
 
+        }
+
+        public List<HeaderField> Unpack(List<byte> packedHeaderBytes)
+        {
+            List<HeaderField> headerList = [];
+
+            int i = 0;
+            while (i < packedHeaderBytes.Count)
+            {
+                BinaryFormat binaryFormat;
+
+                //Indexed Header Field
+                if ((packedHeaderBytes[i] & 128) == 128)
+                {
+                    binaryFormat = BinaryFormat.IndexedHeaderField;
+                }
+
+                //Literal Header Field with Incremental Indexing
+                else if ((packedHeaderBytes[i] & 64) == 64)
+                {
+                    binaryFormat = BinaryFormat.LiteralWithIndex;
+                }
+
+                //Literal Header Field without Indexing
+                else if (packedHeaderBytes[i] >> 4 == 0)
+                {
+                    binaryFormat = BinaryFormat.LiteralWithoutIndex;
+                }
+
+                //Literal Header Field Never Indexed
+                else if ((packedHeaderBytes[i] & 16) == 16)
+                {
+                    binaryFormat = BinaryFormat.LiteralNeverIndexed;
+                }
+                else
+                {
+                    throw new NotSupportedException("Invalid Header Bytes");
+                }
+
+                (HeaderField headerField, int numberOfBytesProcessed) = DecodeHeader(binaryFormat, packedHeaderBytes, i);
+                headerList.Add(headerField);
+                i += numberOfBytesProcessed;
+
+                if (binaryFormat == BinaryFormat.LiteralWithIndex)
+                {
+                    _dynamicTable.Add(headerField);
+                }
+            }
+
+            return headerList;
         }
 
         #endregion
 
         #region private
 
-        private void EncodeHeader(BinaryFormat type, byte destination, HeaderField headerField, List<byte> result, int headerIndex = int.MaxValue)
+        private void EncodeHeader(BinaryFormat format, byte destination, HeaderField headerField, List<byte> result, int headerIndex = int.MaxValue)
         {
-            switch (type)
+            switch (format)
             {
                 case BinaryFormat.IndexedHeaderField:
                     if (headerIndex == int.MaxValue)
@@ -243,8 +293,106 @@ namespace HPack
                     break;
 
                 default:
-                    throw new NotImplementedException($"Header Encoding Not Implemented for type {type}");
+                    throw new NotImplementedException($"Header Encoding Not Implemented for type {format}");
             }
+        }
+
+        private (HeaderField, int) DecodeHeader(BinaryFormat format, List<byte> encodedBytes, int startIndex)
+        {
+            int headerIndex = -1;
+            int numberOfBytesProcessed = 0;
+
+            switch (format)
+            {
+                case BinaryFormat.IndexedHeaderField:
+                    (headerIndex, numberOfBytesProcessed) = DecodeInteger(encodedBytes, 7, startIndex);
+                    break;
+
+                case BinaryFormat.LiteralWithIndex:
+                    (headerIndex, numberOfBytesProcessed) = DecodeInteger(encodedBytes, 6, startIndex);
+                    break;
+
+                case BinaryFormat.LiteralNeverIndexed:
+                case BinaryFormat.LiteralWithoutIndex:
+                    (headerIndex, numberOfBytesProcessed) = DecodeInteger(encodedBytes, 4, startIndex);
+                    break;
+
+                default:
+                    throw new NotImplementedException($"Header Encoding Not Implemented for type {format}");
+            }
+
+            if (format == BinaryFormat.IndexedHeaderField)
+            {
+                if (headerIndex == 0)
+                {
+                    throw new Exception("Header Index cannot be -1 for BinaryFormat type 1");
+                }
+
+                HeaderField headerField = headerIndex <= _staticTable.Length ? _staticTable[headerIndex - 1] : _dynamicTable.GetElement(headerIndex - (_staticTable.Length + 1));
+                return (headerField, numberOfBytesProcessed);
+            }
+
+            startIndex += numberOfBytesProcessed;
+
+            string headerName;
+            string headerValue;
+
+            //Decoding Header Name
+
+            //Get Header Name Index from Static/Dynamic Table
+            if (headerIndex > 0)
+            {
+                headerName = headerIndex <= _staticTable.Length ? _staticTable[headerIndex - 1].Name : _dynamicTable.GetElement(headerIndex - (_staticTable.Length + 1)).Name;
+            }
+            else
+            {
+                //Check if Header Value is Huffman Encoded
+                bool isHuffmanEncodedHeaderName = (encodedBytes[startIndex] & 128) == 128;
+
+                //Get Header Name Length
+                (int encodedHeaderNameLength, int bytesProcessedForHeaderNameLength) = DecodeInteger(encodedBytes, 7, startIndex);
+                startIndex += bytesProcessedForHeaderNameLength;
+                numberOfBytesProcessed += bytesProcessedForHeaderNameLength;
+
+                //Get Header Name String
+                if (isHuffmanEncodedHeaderName)
+                {
+                    headerName = Huffman.Decode([.. encodedBytes.GetRange(startIndex, encodedHeaderNameLength)]);
+                }
+                else
+                {
+                    headerName = Encoding.ASCII.GetString([.. encodedBytes.GetRange(startIndex, encodedHeaderNameLength)]);
+                }
+
+                startIndex += encodedHeaderNameLength;
+                numberOfBytesProcessed += encodedHeaderNameLength;
+            }
+
+            //Decoding Header Value
+
+            //Check if Header Value is Huffman Encoded
+            bool isHuffmanEncodedHeaderValue = (encodedBytes[startIndex] & 128) == 128;
+
+            //Get Header Value Length
+            (int encodedHeaderValueLength, int bytesProcessedForHeaderValueLength) = DecodeInteger(encodedBytes, 7, startIndex);
+            startIndex += bytesProcessedForHeaderValueLength;
+            numberOfBytesProcessed += bytesProcessedForHeaderValueLength;
+
+            //Get Header Value String
+            if (isHuffmanEncodedHeaderValue)
+            {
+                headerValue = Huffman.Decode([.. encodedBytes.GetRange(startIndex, encodedHeaderValueLength)]);
+            }
+            else
+            {
+                headerValue = Encoding.ASCII.GetString([.. encodedBytes.GetRange(startIndex, encodedHeaderValueLength)]);
+            }
+
+            startIndex += encodedHeaderValueLength;
+            numberOfBytesProcessed += encodedHeaderValueLength;
+
+            HeaderField decodedHeaderField = new HeaderField(headerName, headerValue);
+            return (decodedHeaderField, numberOfBytesProcessed);
         }
 
         private void EncodeInteger(byte destination, int I, int N, List<byte> result)
@@ -270,12 +418,12 @@ namespace HPack
             EncodeInteger(0, I, 8, result);
         }
 
-        private int DecodeInt(List<byte> bytes, int N)
+        private (int, int) DecodeInteger(List<byte> bytes, int N, int startIndex)
         {
             int I = 0;
-            for (int i = 0; i < bytes.Count; i++)
+            for (int i = startIndex; i < bytes.Count; i++)
             {
-                if (i == 0)
+                if (i == startIndex)
                 {
                     byte res = (byte)((bytes[i] << (8 - N)) | ((1 << (8 - N)) - 1));
 
@@ -287,7 +435,7 @@ namespace HPack
                     else
                     {
                         I += bytes[i] & ((1 << N) - 1);
-                        return I;
+                        return (I, i - startIndex + 1);
                     }
                 }
                 else
@@ -300,51 +448,30 @@ namespace HPack
                     else
                     {
                         I += (bytes[i] & ((1 << 7) - 1)) * 128;
-                        return I;
+                        return (I, i - startIndex + 1);
                     }
                 }
             }
-            return 0;
-        }
-
-        enum BinaryFormat
-        {
-            IndexedHeaderField = 1,
-            LiteralWithIndex = 2,
-            LiteralWithoutIndex = 3,
-            LiteralNeverIndexed = 4
-        }
-
-        #endregion
-    }
-
-    public class HeaderField
-    {
-        #region variables
-
-        readonly string _name;
-        readonly string _value;
-
-        #endregion
-
-        #region constructor
-
-        public HeaderField(string name, string value)
-        {
-            _name = name;
-            _value = value;
+            return (I, bytes.Count + 1);
         }
 
         #endregion
 
         #region properties
 
-        public string Name { get => _name; }
-
-        public string Value { get => _value; }
-
-        public int Size { get => _name.Length + _value.Length + 32; }
+        public DynamicTable DynamicTable { get => _dynamicTable; }
 
         #endregion
+
+
+        enum BinaryFormat
+        {
+            None = 0,
+            IndexedHeaderField = 1,
+            LiteralWithIndex = 2,
+            LiteralWithoutIndex = 3,
+            LiteralNeverIndexed = 4
+        }
+
     }
 }
