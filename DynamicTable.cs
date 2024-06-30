@@ -47,6 +47,8 @@
 
         public int Count { get => _table.Count; }
 
+        public int Capacity { get => _maxCapacity; }
+
         #endregion
     }
 }
