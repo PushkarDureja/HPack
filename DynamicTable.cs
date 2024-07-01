@@ -28,17 +28,23 @@
             return _table[index];
         }
 
-        public void Add(HeaderField header)
+        public bool Add(HeaderField header)
         {
-            while (_currentSize + header.Size > _maxCapacity)
+            while (_currentSize > 0 && _currentSize + header.Size > _maxCapacity)
             {
                 int lastTableItemSize = _table.Last().Size;
                 _table.RemoveAt(_table.Count - 1);
                 _currentSize -= lastTableItemSize;
             }
 
-            _table.Insert(0, header);
-            _currentSize += header.Size;
+            if (_currentSize + header.Size <= _maxCapacity)
+            {
+                _table.Insert(0, header);
+                _currentSize += header.Size;
+                return true;
+            }
+
+            return false;
         }
 
         #endregion
