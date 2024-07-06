@@ -4,11 +4,14 @@
     {
         static void Main(string[] args)
         {
+            IntegerEncodeDecodeTest();
             EndToEndHpackTest();
         }
 
         public static void EndToEndHpackTest()
         {
+            Console.WriteLine("RUNNING HEADER PACKING/UNPACKING TEST ................");
+
             List<List<HeaderField>> headerList = [
                 [
                     new(":status", "302"),
@@ -76,6 +79,28 @@
 
                 Console.WriteLine("\r\n");
             }
+        }
+
+        public static void IntegerEncodeDecodeTest()
+        {
+            Console.WriteLine("RUNNING INTEGER ENCODING/DECODING TEST ................");
+            List<List<int>> integersToBeEncoded = [[0, 5, 1337], [0, 6, 55], [0, 3, 500]];
+            List<byte> data = new List<byte>();
+
+            foreach (List<int> integerToBeEncoded in integersToBeEncoded)
+            {
+                byte prefix = (byte)integerToBeEncoded[0];
+                int N = integerToBeEncoded[1];
+                int I = integerToBeEncoded[2];
+
+                Hpack.EncodeInteger(prefix, I, N, data);
+                (int decodedInteger, _) = Hpack.DecodeInteger(data, N, 0);
+
+                Console.WriteLine($"Integer Decoding Success for {I}:  {I == decodedInteger}");
+                data.Clear();
+            }
+
+            Console.WriteLine("\r\n");
         }
 
         public static void PrintHeaders(List<HeaderField> headers)
