@@ -447,39 +447,37 @@ namespace HPack
 
         private (int, int) DecodeInteger(List<byte> bytes, int N, int startIndex)
         {
-            int I = 0;
-            for (int i = startIndex; i < bytes.Count; i++)
-            {
-                if (i == startIndex)
-                {
-                    byte res = (byte)((bytes[i] << (8 - N)) | ((1 << (8 - N)) - 1));
+            if (startIndex < 0 || startIndex >= bytes.Count)
+                throw new NotSupportedException("Decoding Failed, Invalid startIndex");
 
-                    //check if all the bits are prefix bits are 1, meaning if number is continued in next bytes or not
-                    if (res == 0xFF)
-                    {
-                        I += (int)Math.Pow(2, N) - 1;
-                    }
-                    else
-                    {
-                        I += bytes[i] & ((1 << N) - 1);
-                        return (I, i - startIndex + 1);
-                    }
+            int I = 0;
+            int shift = 0;
+            int idx = startIndex;
+            bool isIntegerContinued = ((bytes[idx] << (8 - N)) | ((1 << (8 - N)) - 1)) == 0xFF;
+
+            if (!isIntegerContinued)
+            {
+                I += (bytes[idx] & ((1 << N) - 1)) << shift;
+                return (I, idx - startIndex + 1);
+            }
+
+            while (isIntegerContinued && idx < bytes.Count)
+            {
+                if (idx == startIndex)
+                {
+                    I += (int)Math.Pow(2, N) - 1;
                 }
                 else
                 {
-                    byte continuationByteVal = (byte)(bytes[i] >> 7);
-                    if (continuationByteVal == 1)
-                    {
-                        I += bytes[i] & ((1 << 7) - 1);
-                    }
-                    else
-                    {
-                        I += (bytes[i] & ((1 << 7) - 1)) * 128;
-                        return (I, i - startIndex + 1);
-                    }
+                    I += (bytes[idx] & ((1 << 7) - 1)) << shift;
+                    isIntegerContinued = (byte)(bytes[idx] >> 7) == 1;
+                    shift += 7;
                 }
+
+                idx++;
             }
-            return (I, bytes.Count + 1);
+
+            return (I, idx - startIndex);
         }
 
         #endregion
