@@ -422,7 +422,7 @@ namespace HPack
             return (decodedHeaderField, numberOfBytesProcessed);
         }
 
-        private void EncodeInteger(byte destination, int I, int N, List<byte> result)
+        public static void EncodeInteger(byte destination, int I, int N, List<byte> result)
         {
             if (I < Math.Pow(2, N) - 1)
             {
@@ -445,7 +445,7 @@ namespace HPack
             EncodeInteger(0, I, 8, result);
         }
 
-        private (int, int) DecodeInteger(List<byte> bytes, int N, int startIndex)
+        public static (int, int) DecodeInteger(List<byte> bytes, int N, int startIndex)
         {
             if (startIndex < 0 || startIndex >= bytes.Count)
                 throw new NotSupportedException("Decoding Failed, Invalid startIndex");
